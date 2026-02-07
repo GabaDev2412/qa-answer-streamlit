@@ -1,102 +1,132 @@
-# Chatbot API
+# PDF Q&A Chatbot
 
-Esta é uma API desenvolvida com FastAPI para criar um chatbot que responde a perguntas com base no contexto de documentos PDF carregados. O chatbot utiliza o Google Generative AI e o Langchain para gerar respostas baseadas em documentos PDF fornecidos pelos usuários.
-
-### OBSERVAÇÃO:
-- Nesta Branche está o código pedido no desafio, mas adicionado uma interface usando Streamlit para melhor usabilidade e teste. 
+Chatbot com interface Streamlit que responde perguntas com base em documentos PDF utilizando RAG Híbrido (BM25 + Semântico). A aplicação combina busca por palavras-chave (BM25) com busca semântica (ChromaDB) para recuperar os trechos mais relevantes dos PDFs e gerar respostas com o Google Gemini.
 
 ## Funcionalidades
 
-- Upload de arquivos PDF.
-- Indexação de documentos PDF para recuperação eficiente de informações.
-- Capacidade de responder a perguntas com base no conteúdo dos PDFs carregados.
-- Salvamento de interações (perguntas e respostas) no banco de dados vetorial Chroma (inacabado).
+- Upload de arquivos PDF via interface web
+- RAG Híbrido: combina BM25 (keyword, peso 0.4) + ChromaDB (semântico, peso 0.6) via EnsembleRetriever
+- Embeddings locais com HuggingFace (`all-MiniLM-L6-v2`)
+- Geração de respostas com Google Gemini 2.5 Flash
+- Persistência dos embeddings em ChromaDB (diretório `data/`)
+- Interface de chat com histórico de conversas
+- API REST com FastAPI (iniciada automaticamente pelo Streamlit)
 
-## Tecnologias Utilizadas
+## Arquitetura
 
-- **[Streamlit](https://docs.streamlit.io/)**: Ferramenta para criar aplicações web interativas e fáceis de usar.
-- **[FastAPI](https://fastapi.tiangolo.com/)**: Framework para construção de APIs.
-- **[Langchain](https://langchain.com/)**: Para manipulação de modelos de linguagem e fluxos de trabalho.
-- **[Google Generative AI](https://developers.generativeai.google/)**: Para geração de respostas e embeddings.
-- **[Chroma](https://docs.trychroma.com/)**: Base de dados vetorial para armazenamento e recuperação de documentos.
-- **[PyPDFLoader](https://python.langchain.com/docs/modules/data_connection/document_loaders/integrations/pdf)**: Para carregar e processar arquivos PDF.
+```
+┌──────────────┐       HTTP        ┌──────────────────────────────┐
+│  Streamlit   │  ──────────────►  │  FastAPI (porta 8001)        │
+│  (app.py)    │                   │  (api.py)                    │
+└──────────────┘                   └──────┬───────────────────────┘
+                                          │
+                              ┌───────────┴───────────┐
+                              │                       │
+                        ┌─────▼─────┐          ┌──────▼──────┐
+                        │   BM25    │          │  ChromaDB   │
+                        │ (keyword) │          │ (semântico) │
+                        └─────┬─────┘          └──────┬──────┘
+                              │                       │
+                              └───────────┬───────────┘
+                                          │
+                                 EnsembleRetriever
+                                          │
+                                   ┌──────▼──────┐
+                                   │ Gemini 2.5  │
+                                   │   Flash     │
+                                   └─────────────┘
+```
+
+## Tecnologias
+
+- **[Streamlit](https://docs.streamlit.io/)** — Interface web interativa (chat)
+- **[FastAPI](https://fastapi.tiangolo.com/)** — API REST para upload e perguntas
+- **[LangChain](https://langchain.com/)** — Orquestração do pipeline RAG
+- **[Google Gemini](https://ai.google.dev/)** — LLM para geração de respostas
+- **[HuggingFace Embeddings](https://huggingface.co/)** — Embeddings locais (`all-MiniLM-L6-v2`)
+- **[ChromaDB](https://docs.trychroma.com/)** — Banco de dados vetorial com persistência
+- **[BM25](https://en.wikipedia.org/wiki/Okapi_BM25)** — Retriever por palavras-chave (rank_bm25)
+- **[PyPDF2](https://pypdf2.readthedocs.io/)** — Extração de texto de PDFs
 
 ## Requisitos
 
-- Python 3.9 ou superior
-- Instalar as dependências listadas no arquivo `requirements.txt`.
+- Python 3.12 ou superior
+- Chave de API do Google Generative AI
 
-### Dependências
+## Instalação e Execução
 
-Aqui estão algumas das principais bibliotecas que precisam ser instaladas:
-
+**1. Clone o repositório:**
 ```bash
-pip install langchain~=0.3.1 langchain_google_genai langchain-community langchain-chroma fastapi~=0.115.0 google-generativeai pypdf2 chromadb uvicorn protobuf~=4.25.5 python-multipart~=0.0.5 python-dotenv~=1.0.1 streamlit streamlit-chat
+git clone <url-do-repositorio>
+cd qa-answer-streamlit
 ```
 
-## Configuração
-
-**1. Clone o repositório e utilize a Branche master**
+**2. Crie um arquivo `.env` na raiz do projeto:**
 ```bash
-git clone https://github.com/GabaDev2412/desafioLizardGenAIGeneration
+GOOGLE_API_KEY="SUA_CHAVE_API"
 ```
 
-**2. Crie um arquivo .env na raiz do projeto e adicione sua chave de API do Google Generative AI:**
+**3. Instale as dependências (com uv ou pip):**
 ```bash
-GOOGLE_API_KEY="SUA CHAVE API"
-```
+# Com uv (recomendado)
+uv sync
 
-**3. Instale as dependências:**
-```bash
+# Ou com pip
 pip install -r requirements.txt
 ```
 
-**4. Inicie o serviço Streamlit::**
+**4. Inicie a aplicação:**
 ```bash
 streamlit run app.py
 ```
 
-## Endpoints
+O Streamlit inicia automaticamente a API FastAPI na porta 8001. A interface web estará disponível em `http://localhost:8501`.
 
-### 1. Upload de PDF
+## Endpoints da API
+
+### Upload de PDF
 `POST /postPDF`
 
-Este endpoint permite o upload de um arquivo PDF. O conteúdo do PDF é indexado para uso futuro nas respostas.
+Faz upload de um PDF, extrai o texto, divide em chunks e indexa no ChromaDB.
 
-#### Parâmetros:
-- `file`: Arquivo PDF enviado pelo usuário.
+| Parâmetro | Tipo       | Descrição            |
+|-----------|------------|----------------------|
+| `file`    | UploadFile | Arquivo PDF          |
 
-#### Resposta:
-- **Sucesso**: Retorna um JSON com a mensagem `"Arquivo carregado!"`.
-- **Erro**:
-  - Status **400** se o arquivo não for um PDF válido.
-  - Status **500** se houver falha no processamento.
-
-### 2. Fazer uma pergunta
-`POST /askQuestion`
-
-Este endpoint permite fazer perguntas com base no conteúdo do(s) PDF(s) carregado(s). A resposta será extraída e gerada a partir do contexto dos PDFs.
-
-#### Parâmetros:
-- `question`: Pergunta a ser respondida.
-
-#### Exemplo de Corpo da Requisição:
+**Resposta (200):**
 ```json
 {
-  "question": "Qual é o resumo do capítulo 2?"
+  "message": "Arquivo carregado com sucesso!",
+  "chunks": 42
 }
 ```
 
-### Resposta:
-- **Sucesso**: Retorna um JSON com a resposta baseada no conteúdo do PDF.
-- **Erro**:
-  - Status **500** se houver falha no processamento da pergunta ou da resposta.
+### Fazer uma pergunta
+`POST /askQuestion`
 
-### Estrutura do Projeto
-```bash
-├── main.py                 # Arquivo principal da API
-├── requirements.txt        # Dependências do projeto
-├── README.md               # Documentação do projeto
-├── .env                    # Arquivo de configuração de variáveis de ambiente
-└── data/                   # Diretório persistente onde os embeddings vetoriais são armazenados
+Busca trechos relevantes via RAG híbrido e gera resposta com Gemini.
+
+| Parâmetro  | Tipo   | Descrição                    |
+|------------|--------|------------------------------|
+| `question` | string | Pergunta sobre o PDF         |
+
+**Resposta (200):**
+```json
+{
+  "answer": "A resposta baseada no conteúdo do PDF..."
+}
+```
+
+## Estrutura do Projeto
+
+```
+├── app.py               # Interface Streamlit (frontend)
+├── api.py               # API FastAPI (backend RAG)
+├── requirements.txt     # Dependências (pip)
+├── pyproject.toml       # Configuração do projeto (uv)
+├── uv.lock              # Lock de dependências (uv)
+├── .env                 # Variáveis de ambiente (GOOGLE_API_KEY)
+├── .envExample          # Exemplo de .env
+├── data/                # Diretório persistente do ChromaDB
+└── .streamlit/          # Configurações do Streamlit
 ```
