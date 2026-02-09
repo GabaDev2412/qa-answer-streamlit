@@ -13,3 +13,5 @@ pypdf2
 python-dotenv
 python-multipart
 rank_bm25
+pymupdf
+pypdf
